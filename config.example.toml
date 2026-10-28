@@ -1,0 +1,64 @@
+[t3]
+# Defaults to $T3CODE_HOME/userdata/statev2.sqlite, or ~/.t3/userdata/statev2.sqlite.
+# database = "~/.t3/userdata/statev2.sqlite"
+# runtime_file = "~/.t3/userdata/server-runtime.json"
+# Set false only when reading a copied database or a mounted remote database.
+check_runtime = true
+# Read-only T3 session JSON for the same total as T3's Usage page.
+# usage_session_file = "~/.config/t3-lametric/t3-usage-session.json"
+# Persistent live activity stream. Needs orchestration:read; defaults to
+# weekly.session_file when that is configured.
+# activity_session_file = "~/.config/t3-lametric/t3-weekly-session.json"
+# time_zone = "Europe/Zurich"
+
+[bridge]
+# Fallback activity polling interval when the live stream is unavailable.
+poll_seconds = 5
+# Usage requests only while the token view and its clock widget are visible.
+# Slow requests automatically increase this interval. Unchanged totals aren't pushed.
+token_refresh_seconds = 1
+refresh_seconds = 60
+completion_seconds = 0.8
+count_seconds = 1
+max_alert_age_seconds = 120
+# state_file = "~/.local/state/t3-lametric/state.json"
+notify_attention = true
+notify_completed = true
+notify_failed = true
+subagent_completions = false
+show_titles = false
+
+[weekly]
+# Optional: show weekly quota remaining during the idle dots cycle.
+# A separate T3 session with orchestration:read, not provider credentials.
+# session_file = "~/.config/t3-lametric/t3-weekly-session.json"
+refresh_seconds = 300
+max_age_seconds = 1800
+# Copy exact provider instance IDs from T3. Labels are at most two characters.
+# accounts = [
+#   { label = "CP", instance_id = "codex" },
+#   { label = "CW", instance_id = "codex_work" },
+#   { label = "CL", source_id = "YOUR_HUB_SOURCE_ID", account_id = "YOUR_CLAUDE_ACCOUNT_ID" },
+# ]
+
+[lametric]
+# Notifications alone only need this URL and a device API key.
+device_url = "http://192.168.1.50:8080"
+# For a persistent dashboard, install My Data DIY, select HTTP Local Push,
+# and copy the complete local widget URL displayed by the LaMetric app.
+# push_url = "http://192.168.1.50:8080/api/v2/widget/update/com.lametric.diy.devwidget/REPLACE_ME"
+api_key_env = "LAMETRIC_API_KEY"
+# Prefer a private file when running under launchd; the key is read at startup.
+# api_key_file = "~/.config/t3-lametric/device.key"
+verify_tls = true
+timeout_seconds = 3
+# Optional device notification sound, e.g. "notification" or "positive1".
+sound = ""
+
+# Additional T3 environments. Use their exact environment IDs and a dedicated
+# private session JSON with orchestration:read and diagnostics:read.
+# [[remotes]]
+# environment_id = "EXACT_REMOTE_ENVIRONMENT_ID"
+# label = "remote-workstation"
+# url = "https://YOUR_T3_CONNECT_HOST"
+# session_file = "~/.config/t3-lametric/remote-workstation-readonly.json"
