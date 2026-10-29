@@ -442,6 +442,12 @@ class CombinedUsage:
             output_tokens=sum(v.output_tokens for v in self.values.values()),
             unavailable_turns=partial,
             source="t3_usage",
+            cost_usd=(
+                sum(v.cost_usd for v in self.values.values())
+                if len(self.values) == len(clients)
+                and all(v.cost_usd is not None for v in self.values.values())
+                else None
+            ),
         )
 
     def close(self):
