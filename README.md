@@ -48,6 +48,8 @@ Provide the device API key through `LAMETRIC_API_KEY` or `lametric.api_key_file`
 
 ### Try vertical rolling digits
 
+**Experimental status:** on the tested TIME sa8 running OS 3.2.8, stream start/stop requests were accepted, but GIF and RAW trials did not produce a confirmed visible per-digit roll. The test installation has this option disabled. API acceptance and renderer tests alone do not establish that a firmware version can display the effect.
+
 Set `token_reel = true` in `[bridge]` to try the experimental half-second digit reel on TIME firmware advertising a 37×8 LMSP pixel canvas. Only changing digits move vertically; the chart icon, unchanged digits, decimal point, and unit stay still. Unit or text-width changes jump straight to the new value.
 
 The reel uses nine small RAW UDP frames, not a full-width icon GIF or scrolling text. A background worker sends about 8 KiB per changed displayed number. It reuses the fetched daily total, makes no extra T3 usage or provider calls, and runs only while the token view is visible. The exact final total is saved to the DIY widget first. An independent half-second timer stops the overlay; Input, Done, and other normal updates cancel it before taking over. The bridge does not replace an already-running external stream. Unsupported or failed streaming falls back to normal text updates. Set `token_reel = false` to keep the standard count-up; it is off by default.
