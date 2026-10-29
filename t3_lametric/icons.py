@@ -255,9 +255,9 @@ def blue_count(count: int) -> str:
 
 @lru_cache(maxsize=1)
 def working_spinner() -> str:
-    # Full 8x8 ring, with a rotating bright head and a fading blue trail.
+    # Large ring with a blank left column, a bright head, and a fading trail.
     # The count uses the text area; TIME plays the animation locally.
-    ring = ((3, 0), (5, 1), (6, 3), (5, 5), (3, 6), (1, 5), (0, 3), (1, 1))
+    ring = ((3, 0), (5, 1), (6, 3), (5, 5), (3, 6), (2, 5), (1, 3), (2, 1))
     images = []
     for step in range(len(ring)):
         pixels = [0] * 64
