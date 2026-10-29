@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "t3-lametric"
-version = "0.8.6"
+version = "0.8.7"
 description = "Provider-independent T3 Code activity and usage on a LaMetric Time"
 readme = "README.md"
 requires-python = ">=3.11"

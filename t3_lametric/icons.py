@@ -6,6 +6,7 @@ import base64
 import struct
 import zlib
 from functools import lru_cache
+from math import atan2, hypot, tau
 
 BLUE = (0, 128, 255)
 GREEN = (40, 220, 100)
@@ -60,8 +61,8 @@ def _png(pixels: list[list[int]], color: tuple[int, int, int] = BLUE) -> bytes:
 def _gif(
     images: list[list[int]], delays: list[int], palette: tuple[tuple[int, int, int], ...]
 ) -> bytes:
-    if len(palette) not in (2, 4, 8):
-        raise ValueError("Icons support two, four, or eight colors")
+    if len(palette) not in (2, 4, 8, 128):
+        raise ValueError("Icons support two, four, eight, or 128 colors")
     output = bytearray(
         b"GIF89a" + struct.pack("<HHBBB", 8, 8, 0x80 | (len(palette).bit_length() - 2), 0, 0)
     )
@@ -70,8 +71,8 @@ def _gif(
     for pixels, delay in zip(images, delays, strict=True):
         output.extend(b"\x21\xf9\x04\x00" + struct.pack("<H", delay) + b"\x00\x00")
         output.extend(b"\x2c" + struct.pack("<HHHHB", 0, 0, 8, 8, 0))
-        # A clear before each literal keeps GIF LZW codes at three bits and
-        # avoids a compression dependency for these tiny two-color images.
+        # A clear before each literal keeps LZW codes at a fixed width,
+        # without needing a compression dependency for these tiny images.
         minimum = max(2, (len(palette) - 1).bit_length())
         clear = 1 << minimum
         bits = minimum + 1
@@ -144,7 +145,7 @@ def symbol(name: str) -> str:
 def idle_dots() -> str:
     """A padded, colorful little dot that glances around and blinks."""
     body = ("0011100", "0111110", "1111111", "1111111", "1111111", "0111110", "0011100")
-    # dx/dy move just the pupils. The whole face gently bobs by one row.
+    # The eyes themselves move: two small white marks, without pupils.
     poses = (
         (0, 0, False, 100),
         (-1, 0, False, 75),
@@ -158,33 +159,45 @@ def idle_dots() -> str:
         (0, 0, True, 12),
         (0, 0, False, 138),
     )
+    anchors = (BLUE, (168, 85, 247), (244, 114, 182))
+    average = tuple(sum(c[channel] for c in anchors) // 3 for channel in range(3))
+    colors = [(0, 0, 0), (255, 255, 255)]
+    # A continuous color wheel with softer colors at the center avoids hard
+    # boundaries. Its orientation changes throughout the locally played GIF.
+    for softness in (0, 0.25, 0.5):
+        for hue in range(42):
+            segment, amount = divmod(hue / 14, 1)
+            first, second = anchors[int(segment)], anchors[(int(segment) + 1) % 3]
+            colors.append(
+                tuple(
+                    round((a + (b - a) * amount) * (1 - softness) + m * softness)
+                    for a, b, m in zip(first, second, average, strict=True)
+                )
+            )
+    palette = tuple(colors)
     images, delays = [], []
-    for index, (dx, dy, blink, delay) in enumerate(poses):
-        pixels = [0] * 64
+    for step in range(75):
+        elapsed = step * 10
+        index = 0
+        while elapsed >= poses[index][3]:
+            elapsed -= poses[index][3]
+            index += 1
+        dx, dy, blink, _ = poses[index]
         bob = 1 if index in (3, 4, 5, 6, 7) else 0
-        for y, row in enumerate(body, bob):
+        pixels = [0] * 64
+        for y, row in enumerate(body):
             for x, pixel in enumerate(row, 1):
                 if pixel == "1":
-                    pixels[y * 8 + x] = 1 if x < 3 else 2 if x < 6 else 3
-        for left in (2, 5):
-            for y in (3,) if blink else (2, 3, 4):
-                for x in (left, left + 1):
-                    pixels[(y + bob) * 8 + x] = 4
-            if not blink:
-                x = left if dx < 0 else left + 1
-                pixels[(3 + dy + bob) * 8 + x] = 5
+                    radius = hypot(x - 4, y - 3)
+                    softness = 2 if radius < 1.5 else 1 if radius < 2.5 else 0
+                    angle = atan2(y - 3, x - 4) / tau + step / 75 + radius * 0.06
+                    hue = round(angle * 42) % 42
+                    pixels[(y + bob) * 8 + x] = 2 + softness * 42 + hue
+        for x in (3 + dx, 5 + dx):
+            for y in (3,) if blink else (2, 3):
+                pixels[(y + dy + bob) * 8 + x] = 1
         images.append(pixels)
-        delays.append(delay)
-    palette = (
-        (0, 0, 0),
-        BLUE,
-        (168, 85, 247),
-        (244, 114, 182),
-        (255, 255, 255),
-        (12, 12, 32),
-        (0, 0, 0),
-        (0, 0, 0),
-    )
+        delays.append(10)
     data = _gif(images, delays, palette)
     return "data:image/gif;base64," + base64.b64encode(data).decode("ascii")
 
