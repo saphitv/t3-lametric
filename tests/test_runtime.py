@@ -17,6 +17,21 @@ from t3_lametric.usage import UsageCache, UsageError
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_reel_plays_from_cached_values_without_extra_t3_reads(self):
+        self.bridge.config = replace(self.config, token_reel=True)
+        self.device.supports_token_roll = True
+        self.device.roll_tokens = Mock(return_value=True)
+        self.usage_reader.read.return_value = Usage(input_tokens=1000, source="t3_usage")
+        self.step(0)
+        self.usage_reader.read.return_value = Usage(input_tokens=1900, source="t3_usage")
+        self.assertEqual(self.step(5)["frames"][0]["text"], "1.9k")
+        self.device.roll_tokens.assert_called_once_with("1.0k", "1.9k")
+        self.step(5.25)
+        self.assertEqual(self.usage_reader.read.call_count, 2)
+        self.assertEqual(self.reader.read.call_count, 1)
+        self.assertIsNone(self.bridge.counter.deadline)
+        self.device.roll_tokens.assert_called_once()
+
     def setUp(self):
         self.time = 0.0
         self.config = Config(Path("db"), None, Path("state"), push_url="http://clock/widget")

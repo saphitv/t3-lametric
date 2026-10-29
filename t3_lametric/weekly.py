@@ -196,26 +196,27 @@ class T3Weekly:
 
 
 class WeeklyCache:
-    def __init__(self, reader: T3Weekly, refresh_seconds: float = 300, *, clock=time.monotonic):
-        self.reader, self.refresh_seconds, self.clock = reader, refresh_seconds, clock
+    def __init__(self, reader: T3Weekly, refresh_seconds: float = 120, *, clock=time.monotonic):
+        self.reader, self.refresh_seconds, self.clock = reader, max(120, refresh_seconds), clock
         self.next_read = 0.0
         self.values = tuple(WeeklyQuota(a.label) for a in reader.accounts)
         self.error: str | None = None
 
     def read(self, *, refresh: bool = True) -> tuple[WeeklyQuota, ...]:
         if refresh and self.clock() >= self.next_read:
-            interrupted = False
             try:
-                self.values = self.reader.read()
+                previous = {q.label: q for q in self.values}
+                self.values = tuple(
+                    q if q.used_percent is not None else previous.get(q.label, q)
+                    for q in self.reader.read()
+                )
                 self.error = None
             except WeeklyInterrupted:
-                interrupted = True
+                pass
             except WeeklyError as error:
                 self.error = str(error)
             finally:
-                # Failures back off as well; a broken source must not turn a
-                # five-second activity poll into repeated network work.
-                self.next_read = (
-                    self.clock() if interrupted else self.clock() + self.refresh_seconds
-                )
+                # Completed, failed, and interrupted attempts all share the
+                # two-minute floor. Activity never causes an immediate retry.
+                self.next_read = self.clock() + self.refresh_seconds
         return self.values

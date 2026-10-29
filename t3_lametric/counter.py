@@ -17,12 +17,16 @@ class TokenCounter:
         self.text = ""
         self.suffix = ""
         self.pending: list[tuple[float, str]] = []
+        self.roll_from: str | None = None
 
     @property
     def deadline(self) -> float | None:
         return self.pending[0][0] if self.pending else None
 
-    def render(self, total: int, suffix: str, day: date, now: float) -> str:
+    def render(
+        self, total: int, suffix: str, day: date, now: float, *, rolling: bool = False
+    ) -> str:
+        self.roll_from = None
         if (total, suffix, day) != (self.target, self.suffix, self.day):
             previous = self.target
             target_text = compact(total) + suffix
@@ -34,12 +38,18 @@ class TokenCounter:
                 and suffix == self.suffix
                 and target_text != self.text
             ):
+                if rolling:
+                    self.roll_from = self.text
                 # Three bounded pushes at most. Dedupe rounded values: small
                 # changes go straight to the real total instead of flickering.
-                steps = list(
-                    dict.fromkeys(
-                        compact(previous + (total - previous) * part // 3) + suffix
-                        for part in (1, 2, 3)
+                steps = (
+                    [target_text]
+                    if rolling
+                    else list(
+                        dict.fromkeys(
+                            compact(previous + (total - previous) * part // 3) + suffix
+                            for part in (1, 2, 3)
+                        )
                     )
                 )
                 steps = [text for text in steps if text != self.text] or [target_text]

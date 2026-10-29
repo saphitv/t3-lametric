@@ -17,6 +17,9 @@ poll_seconds = 5
 # Usage requests only while the token view and its clock widget are visible.
 # Slow requests automatically increase this interval. Unchanged totals aren't pushed.
 token_refresh_seconds = 1
+# Experimental vertical digits on TIME firmware with a 37x8 LMSP canvas.
+# Uses a short streaming overlay; set true to try it, false for count-up text.
+token_reel = false
 refresh_seconds = 60
 completion_seconds = 0.8
 count_seconds = 1
@@ -32,7 +35,7 @@ show_titles = false
 # Optional: show weekly quota remaining during the idle dots cycle.
 # A separate T3 session with orchestration:read, not provider credentials.
 # session_file = "~/.config/t3-lametric/t3-weekly-session.json"
-refresh_seconds = 300
+refresh_seconds = 120
 max_age_seconds = 1800
 # Copy exact provider instance IDs from T3. Labels are at most two characters.
 # accounts = [

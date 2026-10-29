@@ -5,6 +5,7 @@ import os
 import tempfile
 import time
 from collections import deque
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -175,6 +176,8 @@ class Bridge:
         self.current_event: Alert | None = None
 
     def close(self) -> None:
+        if self.device:
+            self.device.stop_token_roll()
         if self.device and self.cue_id:
             expired = self.cue_expiry.cancel() if self.cue_expiry else False
             self.cue_expiry = None
@@ -246,7 +249,13 @@ class Bridge:
             self.ledger.discarded(dropped, snapshot.captured_at)
         return len(dropped)
 
-    def tick(self, snapshot: Snapshot, *, observe: bool = True) -> dict:
+    def tick(
+        self,
+        snapshot: Snapshot,
+        *,
+        observe: bool = True,
+        allow_token_roll: bool | Callable[[], bool] = False,
+    ) -> dict:
         now = self.clock()
         self._advance(snapshot, now)
 
@@ -316,6 +325,14 @@ class Bridge:
             selected = [a for a in pending if a.kind == "attention"]
         elif state not in ("done", "failed", "count"):
             selected = []
+        rolling = bool(
+            state == "tokens"
+            and snapshot.usage.available
+            and self.config.token_reel
+            and self.device
+            and (allow_token_roll() if callable(allow_token_roll) else allow_token_roll)
+            and self.device.supports_token_roll
+        )
         if state == "tokens" and snapshot.usage.available:
             dashboard = [
                 dict(
@@ -325,6 +342,7 @@ class Bridge:
                         "",
                         snapshot.captured_at.date(),
                         now,
+                        rolling=rolling,
                     ),
                 )
             ]
@@ -394,6 +412,10 @@ class Bridge:
                         if input_dashboard is None:
                             self.device.dashboard(dashboard)
                             self.last_widget_dashboard = dashboard
+                            if rolling and self.counter.roll_from:
+                                self.device.roll_tokens(
+                                    self.counter.roll_from, dashboard[0]["text"]
+                                )
                         if not self.config.push_url and selected and state == "input":
                             payload = selected[0].payload(self.config.sound)
                             self.device.notify(payload)

@@ -45,11 +45,15 @@ def icon_colors(icon):
 
 class FakeDevice:
     def __init__(self):
+        self.supports_token_roll = False
         self.popups = []
         self.dashboards = []
         self.dismissed = []
         self.offline = False
         self.timed_dismissals = []
+
+    def stop_token_roll(self):
+        pass
 
     def notify(self, payload):
         if self.offline:

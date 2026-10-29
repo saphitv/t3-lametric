@@ -7,13 +7,75 @@ import unittest
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from t3_lametric.config import Config, ConfigError, load
 from t3_lametric.device import DeviceError, LaMetric, WidgetVisibility
 
 
 class DeviceTests(unittest.TestCase):
+    def test_reel_sends_nine_raw_frames_and_input_stops_it_before_updating_widget(self):
+        device = LaMetric(self.config)
+        device._roll_supported = True
+        device._request = Mock(
+            side_effect=[
+                {"status": "stopped"},
+                {
+                    "success": {
+                        "data": {"session_id": "12345678-1234-5678-1234-567812345678", "port": 9999}
+                    }
+                },
+                {},
+                {},
+            ]
+        )
+        with (
+            patch("t3_lametric.device.socket.socket") as sender,
+            patch("t3_lametric.device.threading.Timer") as timer,
+            patch("t3_lametric.device.threading.Thread") as worker,
+        ):
+            self.assertTrue(device.roll_tokens("1.0M", "1.1M"))
+            args = worker.call_args.kwargs["args"]
+            with patch.object(args[-1], "wait", return_value=False):
+                device._play_token_roll(*args)
+            sent = sender.return_value.__enter__.return_value.sendto
+            self.assertEqual(sent.call_count, 9)
+            self.assertTrue(all(len(call.args[0]) == 924 for call in sent.call_args_list))
+            self.assertEqual(timer.call_args.args[0], 0.5)
+            device.dashboard([{"text": "Input"}])
+            timer.return_value.cancel.assert_called_once()
+        paths = [call.args[0] for call in device._request.call_args_list]
+        self.assertTrue(paths[-2].endswith("/stream/stop"))
+        self.assertEqual(paths[-1], self.config.push_url)
+        self.assertIsNone(device._roll_timer)
+
+    def test_expired_overlay_callback_cannot_stop_a_newer_animation(self):
+        device = LaMetric(self.config)
+        old, current = Mock(), Mock()
+        device._roll_timer = current
+        device._request = Mock()
+        device._finish_token_roll(old)
+        device._request.assert_not_called()
+        self.assertIs(device._roll_timer, current)
+
+    def test_reel_does_not_replace_an_existing_external_stream(self):
+        device = LaMetric(self.config)
+        device._roll_supported = True
+        device._request = Mock(return_value={"status": "receiving"})
+        self.assertFalse(device.roll_tokens("1.0M", "1.1M"))
+        device._request.assert_called_once()
+        self.assertIsNone(device._roll_timer)
+
+    def test_uncertain_stream_start_schedules_cleanup_and_disables_reel(self):
+        device = LaMetric(self.config)
+        device._roll_supported = True
+        device._request = Mock(side_effect=[{"status": "stopped"}, DeviceError("timeout")])
+        with patch("t3_lametric.device.threading.Timer") as timer:
+            self.assertFalse(device.roll_tokens("1.0M", "1.1M"))
+            self.assertEqual(timer.call_args.args[0], 0)
+            timer.return_value.start.assert_called_once()
+        self.assertFalse(device.supports_token_roll)
+
     @classmethod
     def setUpClass(cls):
         cls.requests = []
@@ -219,13 +281,14 @@ class ConfigTests(unittest.TestCase):
         )
         self.assertEqual(config.weekly_session_file, self.root / "weekly.json")
         self.assertEqual([a.label for a in config.weekly_accounts], ["CP", "CL"])
-        self.assertEqual(config.weekly_refresh_seconds, 300)
+        self.assertEqual(config.weekly_refresh_seconds, 120)
         for settings in (
             'accounts=[{label="TOOLONG",instance_id="codex"}]',
             'accounts=[{label="CP",source_id="hub"}]',
             'accounts=[{label="CP",instance_id="codex",source_id="hub",account_id="a"}]',
             'accounts=[{label="CP",instance_id="a"},{label="CP",instance_id="b"}]',
             "refresh_seconds=5",
+            "refresh_seconds=119",
             "max_age_seconds=-1",
         ):
             with self.subTest(settings=settings), self.assertRaises(ConfigError):

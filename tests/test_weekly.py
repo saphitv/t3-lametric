@@ -12,7 +12,7 @@ from t3_lametric.bridge import Bridge, Ledger
 from t3_lametric.config import Config, WeeklyAccount
 from t3_lametric.display import frames
 from t3_lametric.icons import token_icon
-from t3_lametric.source import Agent, Request, Snapshot, Usage, iso
+from t3_lametric.source import Agent, Request, Snapshot, Usage, WeeklyQuota, iso
 from t3_lametric.weekly import (
     T3Weekly,
     WeeklyCache,
@@ -45,15 +45,37 @@ def limits(used=27, *, checked=NOW, reset=None):
 
 
 class WeeklyTests(unittest.TestCase):
-    def test_activity_interruption_does_not_delay_weekly_refresh_by_five_minutes(self):
+    def test_two_minute_floor_and_partial_failures_reuse_cached_result(self):
+        account = WeeklyAccount("CP", instance_id="personal")
+        good = quota(account, limits(10), 1800)
+        updated = quota(account, limits(20), 1800)
+        reader = Mock(accounts=(account,))
+        reader.read.side_effect = [(good,), (WeeklyQuota("CP"),), (updated,)]
+        now = [0]
+        cache = WeeklyCache(reader, 1, clock=lambda: now[0])
+        self.assertEqual(cache.read(), (good,))
+        now[0] = 119
+        self.assertEqual(cache.read(), (good,))
+        self.assertEqual(reader.read.call_count, 1)
+        now[0] = 120
+        self.assertEqual(cache.read(), (good,))
+        now[0] = 240
+        self.assertEqual(cache.read(), (updated,))
+
+    def test_interrupted_reads_obey_the_two_minute_limit(self):
         account = WeeklyAccount("CL", source_id="hub", account_id="claude")
         value = quota(account, limits(), 1800)
         reader = Mock(accounts=(account,))
         reader.read.side_effect = [WeeklyInterrupted("activity changed"), (value,)]
-        cache = WeeklyCache(reader, clock=lambda: 0)
+        now = [0]
+        cache = WeeklyCache(reader, clock=lambda: now[0])
         cache.read()
         self.assertIsNone(cache.error)
-        self.assertEqual(cache.next_read, 0)
+        self.assertEqual(cache.next_read, 120)
+        for now[0] in (0, 1, 60, 119):
+            cache.read()
+        self.assertEqual(reader.read.call_count, 1)
+        now[0] = 120
         self.assertEqual(cache.read(), (value,))
 
     def test_only_overall_weekly_window_is_used(self):

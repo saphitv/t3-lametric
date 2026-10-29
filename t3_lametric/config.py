@@ -43,6 +43,7 @@ class Config:
     state_file: Path
     poll_seconds: float = 5
     token_refresh_seconds: float = 1
+    token_reel: bool = False
     refresh_seconds: float = 60
     completion_seconds: float = 0.8
     count_seconds: float = 1
@@ -51,7 +52,7 @@ class Config:
     time_zone: str | None = None
     weekly_session_file: Path | None = None
     weekly_accounts: tuple[WeeklyAccount, ...] = ()
-    weekly_refresh_seconds: float = 300
+    weekly_refresh_seconds: float = 120
     weekly_max_age_seconds: float = 1800
     remotes: tuple[RemoteConfig, ...] = ()
     max_alert_age_seconds: int = 120
@@ -106,6 +107,7 @@ def load(path: Path | None = None) -> Config:
             "state_file",
             "poll_seconds",
             "token_refresh_seconds",
+            "token_reel",
             "refresh_seconds",
             "max_alert_age_seconds",
             "notify_completed",
@@ -276,6 +278,7 @@ def load(path: Path | None = None) -> Config:
             raise ConfigError("t3.time_zone must be an IANA zone, such as Europe/Zurich") from None
     for key in (
         "verify_tls",
+        "token_reel",
         "notify_completed",
         "notify_failed",
         "notify_attention",
@@ -292,7 +295,7 @@ def load(path: Path | None = None) -> Config:
         ("max_alert_age_seconds", 10, 3600),
         ("completion_seconds", 0.5, 1),
         ("count_seconds", 0.1, 5),
-        ("weekly_refresh_seconds", 60, 3600),
+        ("weekly_refresh_seconds", 120, 3600),
         ("weekly_max_age_seconds", 600, 86400),
     ):
         value = getattr(config, key)

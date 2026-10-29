@@ -64,11 +64,17 @@ class DisplayLoop:
         if self.weekly:
             self.snapshot = replace(self.snapshot, weekly=self.weekly.values)
         # Commit a completion cue before making any potentially slow usage RPC.
-        update = self.bridge.tick(self.snapshot, observe=observe)
+        visible = None
+
+        def widget_visible():
+            nonlocal visible
+            if visible is None:
+                visible = self.visibility is None or self.visibility.read()
+            return visible
+
+        update = self.bridge.tick(self.snapshot, observe=observe, allow_token_roll=widget_visible)
         self.tokens_visible = (
-            update["state"] == "tokens"
-            and not update["errors"]
-            and (self.visibility is None or self.visibility.read())
+            update["state"] == "tokens" and not update["errors"] and widget_visible()
         )
         old_usage, old_weekly = self.snapshot.usage, self.snapshot.weekly
         if self.usage:
@@ -87,7 +93,9 @@ class DisplayLoop:
                 ),
             )
         if old_usage != self.snapshot.usage or old_weekly != self.snapshot.weekly:
-            refreshed = self.bridge.tick(self.snapshot, observe=False)
+            refreshed = self.bridge.tick(
+                self.snapshot, observe=False, allow_token_roll=self.tokens_visible
+            )
             refreshed["errors"] = update["errors"] + refreshed["errors"]
             refreshed["notifications"] = update["notifications"] + refreshed["notifications"]
             refreshed["dropped_events"] += update["dropped_events"]

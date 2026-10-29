@@ -8,6 +8,18 @@ from t3_lametric.display import compact
 
 
 class CounterTests(unittest.TestCase):
+    def test_pixel_reel_uses_exact_target_and_only_starts_once_per_change(self):
+        counter = TokenCounter()
+        counter.render(1_000_000, "", NOW.date(), 0, rolling=True)
+        self.assertEqual(counter.render(1_100_000, "", NOW.date(), 1, rolling=True), "1.1M")
+        self.assertEqual(counter.roll_from, "1.0M")
+        self.assertIsNone(counter.deadline)
+        counter.render(1_100_000, "", NOW.date(), 1.5, rolling=True)
+        self.assertIsNone(counter.roll_from)
+        counter.pause()
+        counter.render(1_200_000, "", NOW.date(), 2, rolling=True)
+        self.assertIsNone(counter.roll_from)
+
     def test_decimal_is_always_present_including_zero_and_unit_boundaries(self):
         examples = {
             0: "0.0",

@@ -25,7 +25,7 @@ Activity changes arrive on T3's persistent **`orchestration.subscribeShell` WebS
 
 The **token total refreshes about once per second only while the token view is selected and its clock widget is visible** (`bridge.token_refresh_seconds`, default 1). It pauses during completion/count cues, pending input, and idle animations. While the logical token view is selected, the bridge checks which clock app is visible at most once every five seconds; switching apps can take up to five seconds to pause/resume usage reads. Usage failures back off at least five seconds, and a slow request increases the delay to ten times its elapsed duration, so usage requests occupy at most roughly 10% of wall time. This is a latency budget, not a measurement of T3 server CPU usage. Fallback activity polling remains five seconds independently.
 
-Activity events interrupt in-flight usage requests, and completion/input cues cancel a count-up immediately. During Done, activity changes are retained and their projection reads wait until its display interval ends. Count-up steps reuse fetched totals and never read T3 again. My Data DIY's documented frame API does not expose a vertical digit-wheel transition; this is a short stepped count-up. The clock receives changed dashboard values plus a once-per-minute heartbeat; it plays idle frames locally. No browser, video stream, or LLM runs as part of this automation.
+Activity events interrupt in-flight usage requests, and completion/input cues cancel a count-up immediately. During Done, activity changes are retained and their projection reads wait until its display interval ends. Count-up steps reuse fetched totals and never read T3 again. My Data DIY's documented frame API does not expose a vertical digit-wheel transition, so the default remains a short stepped count-up. An experimental pixel reel is available below. The clock receives changed dashboard values plus a once-per-minute heartbeat; it plays idle frames locally. No browser or LLM runs as part of this automation.
 
 Measured on October 28, 2026, using one cold and five warm requests per server: median warm `server.getUsageSummary` round-trip was **39.22 ms locally** (36 ms server-reported scan) and **29.09 ms on remote-workstation** (13 ms scan), with roughly 1–2 ms of bridge CPU time per call. Local and remote usage reads are sequential, so a combined warm refresh was approximately 70 ms. These timings are observations, not guarantees; backoff handles slower refreshes. No CLI process is launched for each update: the bridge reuses authenticated T3 WebSocket RPC connections.
 
@@ -45,6 +45,14 @@ cp config.example.toml ~/.config/t3-lametric/config.toml
 In the LaMetric mobile app, install **My Data DIY**, choose **HTTP / Local Push**, and copy its local widget URL into `lametric.push_url`. Set `lametric.device_url` to the clock's origin, such as `http://lametric.local:8080`.
 
 Provide the device API key through `LAMETRIC_API_KEY` or `lametric.api_key_file`. A private key file (`chmod 600`) works best for a background service. The key is available under Device → Settings → Device API Key, or in the LaMetric developer portal under My Devices. Neither the key nor a T3 bearer token belongs in a URL or the repository.
+
+### Try vertical rolling digits
+
+Set `token_reel = true` in `[bridge]` to try the experimental half-second digit reel on TIME firmware advertising a 37×8 LMSP pixel canvas. Only changing digits move vertically; the chart icon, unchanged digits, decimal point, and unit stay still. Unit or text-width changes jump straight to the new value.
+
+The reel uses nine small RAW UDP frames, not a full-width icon GIF or scrolling text. A background worker sends about 8 KiB per changed displayed number. It reuses the fetched daily total, makes no extra T3 usage or provider calls, and runs only while the token view is visible. The exact final total is saved to the DIY widget first. An independent half-second timer stops the overlay; Input, Done, and other normal updates cancel it before taking over. The bridge does not replace an already-running external stream. Unsupported or failed streaming falls back to normal text updates. Set `token_reel = false` to keep the standard count-up; it is off by default.
+
+This temporarily switches the device to streaming mode. Normal shutdown stops it. If the host stops abruptly during playback, the device may need its stream stopped before returning to its normal apps. The LaMetric streaming documentation is written for SKY; TIME behavior varies by firmware, so capability discovery and a physical display check are needed.
 
 ### Use T3's own total
 
@@ -98,7 +106,7 @@ Add `[weekly]` settings like these, using exact instance IDs and Hub source/acco
 ```toml
 [weekly]
 session_file = "~/.config/t3-lametric/t3-weekly-session.json"
-refresh_seconds = 300
+refresh_seconds = 120
 max_age_seconds = 1800
 accounts = [
   { label = "CP", instance_id = "codex" },
@@ -109,7 +117,7 @@ accounts = [
 
 `CP`/`CW` can stand for Codex Personal/Work and `CL` for Claude. Labels support one or two uppercase letters/digits. Select up to six accounts, each by `instance_id` or by both `source_id` and `account_id`; selectors are exact so other accounts and Hub duplicates stay out of the cycle. A Claude instance that publishes limits directly can use `instance_id` instead.
 
-The bridge briefly subscribes to T3's read-only `subscribeServerConfig` stream with `usageLimitSources` enabled. It reads the initial published provider/Hub snapshots and closes that subscription; the separate live activity subscription remains connected. It never starts a provider session, changes accounts, redeems credits, or reads provider credentials. Background quota reads occur only while idle, at most every five minutes; failures use the same backoff. An activity event can cancel a quota read and retry it when idle again.
+The bridge briefly subscribes to T3's read-only `subscribeServerConfig` stream with `usageLimitSources` enabled. It reads the initial published provider/Hub snapshots and closes that subscription; the separate live activity subscription remains connected. It never starts a provider session, changes accounts, redeems credits, or reads provider credentials. Background quota reads occur only while idle, at most once every two minutes. Results are cached and reused between attempts; a temporarily unavailable account keeps its previous reading until that reading expires. Completed, failed, and interrupted attempts all wait at least two minutes before the next attempt. An activity event can cancel a read, but does not bypass that limit.
 
 Only the overall **weekly** window is shown. Session limits and Claude's overlapping model-specific weekly windows are excluded. Missing, unsupported, expired, or older-than-30-minute readings show `?`, rather than a guessed zero or a presumed full allowance after reset. Temporary read failures retain recent readings until they expire. Freshness depends on T3's own provider/Hub refreshes. `CP ?`, for example, means Codex Personal's weekly reading is unavailable or stale; it does not mean that the account has no quota left. Fresh data returns automatically on the next idle refresh. Weekly peeks appear only while idle.
 
@@ -188,4 +196,4 @@ Use the registered T3 project's Setup, Test, Lint, and Build scripts for the sam
 
 Tests cover timed native cues and dismissal, input indicator resumption and question-text suppression, event filtering, visible-token scheduling, interruption of in-flight token reads, session deduplication, native animation delivery, T3 usage accounting, weekly account selection and expiry, cached quota backoff, persistence, and a fake LaMetric HTTP device. No live database writes or real credentials are required.
 
-References: [LaMetric authorization](https://lametric-documentation.readthedocs.io/en/latest/reference-docs/device-authorization.html), [notifications](https://lametric-documentation.readthedocs.io/en/latest/reference-docs/device-notifications.html), [DIY frames/GIFs](https://help.lametric.com/support/solutions/articles/6000225467-my-data-diy), [T3 RPC contracts](https://github.com/pingdotgg/t3code/blob/main/packages/contracts/src/rpc.ts), [official OpenAI documentation for account rate-limit fields](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt).
+References: [LaMetric authorization](https://lametric-documentation.readthedocs.io/en/latest/reference-docs/device-authorization.html), [notifications](https://lametric-documentation.readthedocs.io/en/latest/reference-docs/device-notifications.html), [DIY frames/GIFs](https://help.lametric.com/support/solutions/articles/6000225467-my-data-diy), [streaming protocol](https://docs.lametric.com/en/latest/reference-docs/device-stream.html), [T3 RPC contracts](https://github.com/pingdotgg/t3code/blob/main/packages/contracts/src/rpc.ts), [official OpenAI documentation for account rate-limit fields](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt).
