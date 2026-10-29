@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from datetime import datetime
@@ -24,7 +25,7 @@ class UsageInterrupted(UsageError):
 def summarize(value: dict) -> Usage:
     if not isinstance(value.get("buckets"), list):
         raise UsageError("T3 returned an unsupported usage summary")
-    result = Usage(source="t3_usage", read_at=value.get("readAt"))
+    result = Usage(source="t3_usage", read_at=value.get("readAt"), cost_usd=0.0)
     for bucket in value.get("buckets", []):
         totals = bucket.get("totals", {})
         counts = [
@@ -43,6 +44,17 @@ def summarize(value: dict) -> Usage:
         result.output_tokens += outgoing
         provider = bucket.get("provider", "unknown")
         result.by_provider[provider] = result.by_provider.get(provider, 0) + incoming + outgoing
+        cost = bucket.get("costUsd")
+        if (
+            type(cost) not in (int, float)
+            or not math.isfinite(cost)
+            or cost < 0
+            or bucket.get("costSource") == "unpriced"
+            or bucket.get("unpricedRecords", 0) > 0
+        ):
+            result.cost_usd = None
+        elif result.cost_usd is not None:
+            result.cost_usd += cost
     return result
 
 

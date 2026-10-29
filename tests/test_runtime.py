@@ -24,9 +24,9 @@ class RuntimeTests(unittest.TestCase):
         self.usage_reader.read.return_value = Usage(input_tokens=1000, source="t3_usage")
         self.step(0)
         self.usage_reader.read.return_value = Usage(input_tokens=1900, source="t3_usage")
-        self.assertEqual(self.step(5)["frames"][0]["text"], "1.9k")
+        self.assertEqual(self.step(10)["frames"][0]["text"], "1.9k")
         self.device.roll_tokens.assert_called_once_with("1.0k", "1.9k")
-        self.step(5.25)
+        self.step(10.25)
         self.assertEqual(self.usage_reader.read.call_count, 2)
         self.assertEqual(self.reader.read.call_count, 1)
         self.assertIsNone(self.bridge.counter.deadline)
@@ -57,6 +57,44 @@ class RuntimeTests(unittest.TestCase):
         self.time = second
         self.activity.changed.return_value = event
         return self.loop.step(NOW + timedelta(seconds=second))
+
+    def test_cost_rotates_on_its_own_deadline_and_refreshes_during_both_views(self):
+        self.usage_reader.read.return_value = Usage(
+            input_tokens=1000, source="t3_usage", cost_usd=12.34
+        )
+        self.usage.interval = 60
+        self.assertEqual(self.step(0)["frames"][0]["text"], "1.0k")
+        self.assertEqual(self.loop.deadline(), 5)
+        self.assertEqual(self.step(4.99)["state"], "tokens")
+        self.assertEqual(self.step(5)["frames"][0]["text"], "$12.34")
+        self.assertEqual(self.loop.deadline(), 10)
+        self.assertEqual(self.usage_reader.read.call_count, 1)
+        self.assertEqual(self.step(10)["frames"][0]["text"], "1.0k")
+        self.usage.next_read = 15
+        self.usage_reader.read.return_value = Usage(
+            input_tokens=2000, source="t3_usage", cost_usd=15.67
+        )
+        self.assertEqual(self.step(15)["frames"][0]["text"], "$15.67")
+        self.assertEqual(self.usage_reader.read.call_count, 2)
+        self.assertEqual(self.reader.read.call_count, 1)
+        self.assertIsNone(self.bridge.counter.deadline)
+
+    def test_input_interrupts_cost_and_resets_the_rotation(self):
+        self.step(0)
+        self.assertEqual(self.step(5)["state"], "cost")
+        self.assertEqual(self.device.dashboards[-1][0]["text"], "$ ?")
+        self.snapshot = replace(
+            self.snapshot,
+            requests=(Request("q", "other", "codex", "user_input", iso(NOW)),),
+        )
+        self.assertEqual(self.step(6, event=True)["state"], "input")
+        self.assertIsNone(self.bridge.stats_deadline)
+        calls = self.usage_reader.read.call_count
+        self.step(20)
+        self.assertEqual(self.usage_reader.read.call_count, calls)
+        self.snapshot = replace(self.snapshot, requests=())
+        self.assertEqual(self.step(21, event=True)["state"], "tokens")
+        self.assertEqual(self.bridge.stats_deadline, 26)
 
     def test_visible_tokens_refresh_every_five_seconds_without_reading_activity_again(self):
         self.step(0)

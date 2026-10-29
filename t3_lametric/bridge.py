@@ -169,6 +169,8 @@ class Bridge:
         self.cue_event_key: str | None = None
         self.cue_expiry: TimedDismissal | None = None
         self.counter = TokenCounter()
+        self.stats_deadline: float | None = None
+        self.show_cost = False
         self.started_runs: set[str] = set()
         self.start_order: deque[str] = deque()
         self.starts_initialized = False
@@ -325,6 +327,22 @@ class Bridge:
             selected = [a for a in pending if a.kind == "attention"]
         elif state not in ("done", "failed", "count"):
             selected = []
+        if state == "tokens":
+            if self.stats_deadline is None:
+                self.show_cost = False
+                self.stats_deadline = now + 5
+            elif now >= self.stats_deadline:
+                intervals = int((now - self.stats_deadline) // 5) + 1
+                if intervals % 2:
+                    self.show_cost = not self.show_cost
+                self.stats_deadline += intervals * 5
+            if self.show_cost:
+                state = "cost"
+                cost = snapshot.usage.cost_usd
+                dashboard = [dict(dashboard[0], text=f"${cost:.2f}" if cost is not None else "$ ?")]
+        else:
+            self.stats_deadline = None
+            self.show_cost = False
         rolling = bool(
             state == "tokens"
             and snapshot.usage.available

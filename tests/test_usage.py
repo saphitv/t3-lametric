@@ -18,6 +18,7 @@ def summary_value():
         "buckets": [
             {
                 "provider": "claude",
+                "costUsd": 1.23,
                 "totals": {
                     "uncachedInputTokens": 10,
                     "cachedInputTokens": 80,
@@ -28,6 +29,7 @@ def summary_value():
             },
             {
                 "provider": "codex",
+                "costUsd": 4.56,
                 "totals": {
                     "uncachedInputTokens": 5,
                     "cachedInputTokens": 20,
@@ -99,11 +101,26 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(usage.by_provider, {"claude": 120, "codex": 35})
         self.assertEqual(usage.source, "t3_usage")
         self.assertFalse(usage.incomplete)
+        self.assertAlmostEqual(usage.cost_usd, 5.79)
 
     def test_an_empty_usage_day_is_a_known_zero(self):
         usage = summarize({"buckets": []})
         self.assertEqual(usage.total, 0)
         self.assertTrue(usage.available)
+        self.assertEqual(usage.cost_usd, 0)
+
+    def test_missing_invalid_and_unpriced_costs_keep_tokens_without_guessing_cost(self):
+        for cost in (None, -1, float("nan"), float("inf"), "1.23", True):
+            with self.subTest(cost=cost):
+                value = summary_value()
+                value["buckets"][0]["costUsd"] = cost
+                usage = summarize(value)
+                self.assertEqual(usage.total, 155)
+                self.assertIsNone(usage.cost_usd)
+        for quality in ({"costSource": "unpriced"}, {"unpricedRecords": 1}):
+            value = summary_value()
+            value["buckets"][1].update(quality)
+            self.assertIsNone(summarize(value).cost_usd)
 
     def test_invalid_totals_do_not_silently_turn_into_zero(self):
         value = summary_value()

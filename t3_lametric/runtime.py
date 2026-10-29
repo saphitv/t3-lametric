@@ -74,7 +74,7 @@ class DisplayLoop:
 
         update = self.bridge.tick(self.snapshot, observe=observe, allow_token_roll=widget_visible)
         self.tokens_visible = (
-            update["state"] == "tokens" and not update["errors"] and widget_visible()
+            update["state"] in ("tokens", "cost") and not update["errors"] and widget_visible()
         )
         old_usage, old_weekly = self.snapshot.usage, self.snapshot.weekly
         if self.usage:
@@ -120,7 +120,9 @@ class DisplayLoop:
             deadlines.append(self.bridge.next_deadline)
         if self.usage and self.tokens_visible:
             deadlines.append(self.usage.next_read)
-        if self.visibility and self.state == "tokens":
+        if self.bridge.stats_deadline is not None:
+            deadlines.append(self.bridge.stats_deadline)
+        if self.visibility and self.state in ("tokens", "cost"):
             deadlines.append(self.visibility.next_read)
         if self.bridge.counter.deadline is not None:
             deadlines.append(self.bridge.counter.deadline)

@@ -440,9 +440,9 @@ class BridgeTests(unittest.TestCase):
             usage=Usage(input_tokens=1_000_000_000, output_tokens=10, source="t3_usage"),
         )
         self.bridge.tick(state)
-        self.time = 5
+        self.time = 1
         self.bridge.tick(replace(state, usage=replace(state.usage, input_tokens=2_000_000_000)))
-        self.time = 5.5
+        self.time = 1.5
         self.bridge.tick(
             replace(state, usage=replace(state.usage, input_tokens=2_000_000_000)), observe=False
         )

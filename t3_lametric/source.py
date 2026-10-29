@@ -82,6 +82,7 @@ class Usage:
     by_provider: dict[str, int] = field(default_factory=dict)
     source: str = "turns"
     read_at: str | None = None
+    cost_usd: float | None = None
 
     @property
     def total(self) -> int:

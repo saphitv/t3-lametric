@@ -259,6 +259,17 @@ class CombinedUsageTests(unittest.TestCase):
             ].endswith("+")
         )
 
+    def test_cost_combines_environments_and_clears_at_midnight(self):
+        self.local.read.return_value.cost_usd = 1.25
+        self.client.read.return_value.cost_usd = 2.50
+        self.assertEqual(self.reader.read(NOW).cost_usd, 3.75)
+        self.remote.healthy = False
+        self.assertEqual(self.reader.read(NOW).cost_usd, 3.75)
+        self.assertIsNone(self.reader.read(NOW + timedelta(days=1)).cost_usd)
+        self.remote.healthy = True
+        self.client.read.return_value.cost_usd = None
+        self.assertIsNone(self.reader.read(NOW + timedelta(days=1)).cost_usd)
+
     def test_midnight_does_not_carry_over_yesterdays_offline_tokens(self):
         self.reader.read(NOW)
         self.remote.healthy = False
