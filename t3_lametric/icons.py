@@ -60,10 +60,10 @@ def _png(pixels: list[list[int]], color: tuple[int, int, int] = BLUE) -> bytes:
 def _gif(
     images: list[list[int]], delays: list[int], palette: tuple[tuple[int, int, int], ...]
 ) -> bytes:
-    if len(palette) not in (2, 4):
-        raise ValueError("Icons support two or four colors")
+    if len(palette) not in (2, 4, 8):
+        raise ValueError("Icons support two, four, or eight colors")
     output = bytearray(
-        b"GIF89a" + struct.pack("<HHBBB", 8, 8, 0x80 | (len(palette) // 2 - 1), 0, 0)
+        b"GIF89a" + struct.pack("<HHBBB", 8, 8, 0x80 | (len(palette).bit_length() - 2), 0, 0)
     )
     output.extend(bytes(channel for color in palette for channel in color))
     output.extend(b"\x21\xff\x0bNETSCAPE2.0\x03\x01\x00\x00\x00")
@@ -72,10 +72,13 @@ def _gif(
         output.extend(b"\x2c" + struct.pack("<HHHHB", 0, 0, 8, 8, 0))
         # A clear before each literal keeps GIF LZW codes at three bits and
         # avoids a compression dependency for these tiny two-color images.
-        codes = [code for pixel in pixels for code in (4, pixel)] + [5]
-        packed = sum(code << (3 * i) for i, code in enumerate(codes))
-        data = packed.to_bytes((3 * len(codes) + 7) // 8, "little")
-        output.extend(bytes((2, len(data))) + data + b"\x00")
+        minimum = max(2, (len(palette) - 1).bit_length())
+        clear = 1 << minimum
+        bits = minimum + 1
+        codes = [code for pixel in pixels for code in (clear, pixel)] + [clear + 1]
+        packed = sum(code << (bits * i) for i, code in enumerate(codes))
+        data = packed.to_bytes((bits * len(codes) + 7) // 8, "little")
+        output.extend(bytes((minimum, len(data))) + data + b"\x00")
     return bytes(output + b";")
 
 
@@ -139,76 +142,50 @@ def symbol(name: str) -> str:
 
 @lru_cache(maxsize=1)
 def idle_dots() -> str:
-    # One empty left column throughout. The clock plays this whole 7.5-second
-    # loop locally: little hops, an orbit, nested rings, and a heart.
-    images, delays = [], []
-
-    def dots(points: tuple[tuple[int, int], ...]) -> list[int]:
-        pixels = [0] * 64
-        for color, (x, y) in enumerate(points, 1):
-            for dy in (0, 1):
-                for dx in (0, 1):
-                    pixels[(y + dy) * 8 + x + dx] = color
-        return pixels
-
-    def add(pixels: list[int], delay: int) -> None:
-        images.append(pixels)
-        delays.append(delay)
-
-    resting = ((1, 4), (3, 5), (6, 4))
-    for step in range(12):
-        points = []
-        for dot, (x, base_y) in enumerate(resting):
-            phase = (step - dot * 3) % 12
-            hop = (0, 1, 2, 1)[phase] if phase < 4 else 0
-            points.append((x, base_y - hop))
-        add(dots(tuple(points)), 12)
-
-    orbit = (
-        (4, 0),
-        (5, 1),
-        (6, 2),
-        (6, 3),
-        (6, 4),
-        (5, 5),
-        (4, 6),
-        (3, 5),
-        (2, 4),
-        (1, 3),
-        (2, 2),
-        (3, 1),
+    """A padded, colorful little dot that glances around and blinks."""
+    body = ("0011100", "0111110", "1111111", "1111111", "1111111", "0111110", "0011100")
+    # dx/dy move just the pupils. The whole face gently bobs by one row.
+    poses = (
+        (0, 0, False, 100),
+        (-1, 0, False, 75),
+        (0, 0, False, 45),
+        (0, -1, False, 70),
+        (0, 0, True, 12),
+        (0, 0, False, 58),
+        (1, 0, False, 85),
+        (1, 1, False, 65),
+        (0, 0, False, 90),
+        (0, 0, True, 12),
+        (0, 0, False, 138),
     )
-    for step in range(24):
-        add(dots(tuple(orbit[(step + dot * 4) % len(orbit)] for dot in range(3))), 8)
-
-    outer = ("0011100", "0100010", "1000001", "1000001", "1000001", "0100010", "0011100")
-    for step in range(6):
+    images, delays = [], []
+    for index, (dx, dy, blink, delay) in enumerate(poses):
         pixels = [0] * 64
-        for y, row in enumerate(outer):
-            for x, pixel in enumerate(row, 1):
-                if pixel == "1":
-                    pixels[y * 8 + x] = 1 + step % 3
-        for y, row in enumerate(("111", "101", "111"), 2):
-            for x, pixel in enumerate(row, 3):
-                if pixel == "1":
-                    pixels[y * 8 + x] = 1 + (step + 1) % 3
-        pixels[3 * 8 + 4] = 1 + (step + 2) % 3
-        add(pixels, 15)
-
-    heart = ("0000000", "0110110", "1111111", "1111111", "0111110", "0011100", "0001000")
-    small_heart = ("0000000", "0000000", "0010100", "0111110", "0011100", "0001000", "0000000")
-    for shape, delay in ((small_heart, 25), (heart, 45), (small_heart, 25)):
-        pixels = [0] * 64
-        for y, row in enumerate(shape):
+        bob = 1 if index in (3, 4, 5, 6, 7) else 0
+        for y, row in enumerate(body, bob):
             for x, pixel in enumerate(row, 1):
                 if pixel == "1":
                     pixels[y * 8 + x] = 1 if x < 3 else 2 if x < 6 else 3
-        add(pixels, delay)
-
-    for points in (((2, 3), (4, 4), (5, 3)), ((1, 4), (3, 4), (6, 4)), resting):
-        add(dots(points), 14)
-    add(dots(resting), 750 - sum(delays))
-    data = _gif(images, delays, ((0, 0, 0), BLUE, (168, 85, 247), (244, 114, 182)))
+        for left in (2, 5):
+            for y in (3,) if blink else (2, 3, 4):
+                for x in (left, left + 1):
+                    pixels[(y + bob) * 8 + x] = 4
+            if not blink:
+                x = left if dx < 0 else left + 1
+                pixels[(3 + dy + bob) * 8 + x] = 5
+        images.append(pixels)
+        delays.append(delay)
+    palette = (
+        (0, 0, 0),
+        BLUE,
+        (168, 85, 247),
+        (244, 114, 182),
+        (255, 255, 255),
+        (12, 12, 32),
+        (0, 0, 0),
+        (0, 0, 0),
+    )
+    data = _gif(images, delays, palette)
     return "data:image/gif;base64," + base64.b64encode(data).decode("ascii")
 
 
