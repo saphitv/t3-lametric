@@ -139,17 +139,76 @@ def symbol(name: str) -> str:
 
 @lru_cache(maxsize=1)
 def idle_dots() -> str:
-    images = []
-    for step in range(12):
+    # One empty left column throughout. The clock plays this whole 7.5-second
+    # loop locally: little hops, an orbit, nested rings, and a heart.
+    images, delays = [], []
+
+    def dots(points: tuple[tuple[int, int], ...]) -> list[int]:
         pixels = [0] * 64
-        for dot, x in enumerate((0, 3, 6)):
-            phase = (step - dot * 4) % 12
-            y = (4, 3, 2, 3)[phase] if phase < 4 else 4
+        for color, (x, y) in enumerate(points, 1):
             for dy in (0, 1):
                 for dx in (0, 1):
-                    pixels[(y + dy) * 8 + x + dx] = dot + 1
+                    pixels[(y + dy) * 8 + x + dx] = color
+        return pixels
+
+    def add(pixels: list[int], delay: int) -> None:
         images.append(pixels)
-    data = _gif(images, [15] * 12, ((0, 0, 0), BLUE, (168, 85, 247), (244, 114, 182)))
+        delays.append(delay)
+
+    resting = ((1, 4), (3, 5), (6, 4))
+    for step in range(12):
+        points = []
+        for dot, (x, base_y) in enumerate(resting):
+            phase = (step - dot * 3) % 12
+            hop = (0, 1, 2, 1)[phase] if phase < 4 else 0
+            points.append((x, base_y - hop))
+        add(dots(tuple(points)), 12)
+
+    orbit = (
+        (4, 0),
+        (5, 1),
+        (6, 2),
+        (6, 3),
+        (6, 4),
+        (5, 5),
+        (4, 6),
+        (3, 5),
+        (2, 4),
+        (1, 3),
+        (2, 2),
+        (3, 1),
+    )
+    for step in range(24):
+        add(dots(tuple(orbit[(step + dot * 4) % len(orbit)] for dot in range(3))), 8)
+
+    outer = ("0011100", "0100010", "1000001", "1000001", "1000001", "0100010", "0011100")
+    for step in range(6):
+        pixels = [0] * 64
+        for y, row in enumerate(outer):
+            for x, pixel in enumerate(row, 1):
+                if pixel == "1":
+                    pixels[y * 8 + x] = 1 + step % 3
+        for y, row in enumerate(("111", "101", "111"), 2):
+            for x, pixel in enumerate(row, 3):
+                if pixel == "1":
+                    pixels[y * 8 + x] = 1 + (step + 1) % 3
+        pixels[3 * 8 + 4] = 1 + (step + 2) % 3
+        add(pixels, 15)
+
+    heart = ("0000000", "0110110", "1111111", "1111111", "0111110", "0011100", "0001000")
+    small_heart = ("0000000", "0000000", "0010100", "0111110", "0011100", "0001000", "0000000")
+    for shape, delay in ((small_heart, 25), (heart, 45), (small_heart, 25)):
+        pixels = [0] * 64
+        for y, row in enumerate(shape):
+            for x, pixel in enumerate(row, 1):
+                if pixel == "1":
+                    pixels[y * 8 + x] = 1 if x < 3 else 2 if x < 6 else 3
+        add(pixels, delay)
+
+    for points in (((2, 3), (4, 4), (5, 3)), ((1, 4), (3, 4), (6, 4)), resting):
+        add(dots(points), 14)
+    add(dots(resting), 750 - sum(delays))
+    data = _gif(images, delays, ((0, 0, 0), BLUE, (168, 85, 247), (244, 114, 182)))
     return "data:image/gif;base64," + base64.b64encode(data).decode("ascii")
 
 
